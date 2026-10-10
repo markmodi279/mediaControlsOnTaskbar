@@ -91,6 +91,7 @@ moment it is saved** - no restart.
   "pinnedApp": "",
   "margin": 6,
   "tileShape": "circle",
+  "hoverControl": true,
   "panelRadius": 12,
   "diagnostics": false,
   "hotkeys": {
@@ -106,6 +107,8 @@ moment it is saved** - no restart.
 - `margin` - pixels at 96 DPI between the tile and its neighbour; scaled to the display.
 - `tileShape` - `circle`, `rounded` or `square`. The art, the hover halo and the progress ring all follow
   it; the ring runs clockwise from top centre along the outline. Anything else means `circle`.
+- `hoverControl` - hovering the tile slides a play/pause button out to its left. Off, or on a vertical taskbar,
+  the tile stays 40 px wide.
 - `panelRadius` - corner radius of the card in pixels at 96 DPI, 0 to 40; `0` is square. The cut is a window
   region, so the corner edge is not anti-aliased (see ARCHITECTURE).
 - `diagnostics` - `true` writes `%APPDATA%\MediaController\log.txt`.

@@ -65,6 +65,10 @@ Owned by the Controller, decoded once per art key, disposed on change.
 **`ui/MediaTile`** is a bare `NativeWindow`, created as a child of the taskbar from the start
 (`WS_CHILD`, parent = `Shell_TrayWnd`, `WS_EX_NOACTIVATE` so a click never steals focus). It is
 owner-drawn into a back buffer: an art disc (circle, rounded square or square - `Config.Shape`), a ring that fills with progress, a hover halo.
+*Hover button:* the window grows leftward once when the pointer arrives (right edge fixed, so the disc does
+not move) and shrinks once after the slide back; the slide in between is painting only, stepped by a
+`FramePump` that exists only while it moves. `PixelWidth` is the live width the Controller positions by;
+the panel anchors on `DiscScreenBounds`, not the whole window.
 It knows nothing about media beyond the state it is handed, and reports left / middle / right clicks.
 No animation thread; the Controller's 1 s tick advances the ring.
 

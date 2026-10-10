@@ -28,7 +28,16 @@ namespace MediaController
         /// <summary>Window width at 96 DPI: the disc plus breathing room either side.</summary>
         public const int Width = 40;
 
+        /// <summary>
+        /// Extra width at 96 DPI while the hover button is out, added on the LEFT: the right edge
+        /// stays against the tray, so the disc does not move when the button appears.
+        /// </summary>
+        const int SlotWidth = 27;
+
         // Authored at 96 DPI, scaled by _dpiScale.
+        const int ButtonDiameter = 24;
+        const int ButtonGap = 3;
+        const int SlideMs = 130;
         const int Diameter = 30;
         const int RingWidth = 2;
         const int ArtInset = 4;
@@ -48,18 +57,33 @@ namespace MediaController
         bool _hover;
         bool _tracking;
 
+        // The hover button. The window grows once, to its full width, when the pointer arrives and
+        // shrinks once when the slide back has finished; the slide itself is only painting. Resizing
+        // a child of Explorer's window every frame would repaint the taskbar under it each time.
+        readonly bool _slide;
+        readonly FramePump _pump;
+        readonly System.Diagnostics.Stopwatch _clock = System.Diagnostics.Stopwatch.StartNew();
+        long _lastStep;
+        float _t;               // 0 = button hidden behind the disc, 1 = fully out
+        bool _wide;             // the window is currently slot-wide
+        bool _buttonHot;
+
         /// <summary>Left click: the Controller toggles the panel.</summary>
         public event Action Clicked;
 
         /// <summary>Middle click: play/pause.</summary>
         public event Action MiddleClicked;
 
+        /// <summary>The slid-out play/pause button was clicked.</summary>
+        public event Action PlayPauseClicked;
+
         /// <summary>Right click, at the pointer in screen coordinates.</summary>
         public event Action<Point> ContextMenuRequested;
 
-        public MediaTile(IntPtr parent, Rectangle bounds, Color background, double dpiScale, TileShape shape)
+        public MediaTile(IntPtr parent, Rectangle bounds, Color background, double dpiScale, TileShape shape, bool slide)
         {
             _shape = shape;
+            _slide = slide;
             _dpiScale = dpiScale;
             _background = background;
 
@@ -75,6 +99,22 @@ namespace MediaController
             // is working in.
             cp.ExStyle = Native.WS_EX_NOACTIVATE;
             CreateHandle(cp);
+            _pump = new FramePump(Handle, "MediaTile frames");
+        }
+
+        /// <summary>
+        /// Window width in pixels right now. The Controller positions the tile by its right edge
+        /// and needs the live width, or its once-a-second re-assert would shrink a wide tile.
+        /// </summary>
+        public int PixelWidth { get { return Px(Width) + (_wide ? Px(SlotWidth) : 0); } }
+
+        /// <summary>The art disc's cell (the base 40 px, right-aligned) in screen coordinates.</summary>
+        public Rectangle DiscScreenBounds()
+        {
+            Native.RECT r;
+            Native.GetWindowRect(Handle, out r);
+            int w = Px(Width);
+            return new Rectangle(r.Right - w, r.Top, w, r.Height);
         }
 
         /// <summary>
@@ -92,6 +132,8 @@ namespace MediaController
             _art = art;
             _ringStep = step;
             if (!same) Invalidate();
+            // A session ending while the button is out sends it back.
+            if (_wide || _hover) Kick();
         }
 
         int _ringStep = -1;
@@ -107,6 +149,7 @@ namespace MediaController
         {
             if (_disposed) return;
             _disposed = true;
+            _pump.Dispose();
             if (Handle != IntPtr.Zero) DestroyHandle();
             if (_buffer != null) _buffer.Dispose();
         }
@@ -166,7 +209,10 @@ namespace MediaController
             Color accent = (live && _art != null) ? _art.Accent : ink;
 
             int d = Px(Diameter);
-            var disc = new Rectangle((w - d) / 2, (h - d) / 2, d, d);
+            // The disc is placed from the RIGHT edge: the window is wider than its base while the
+            // hover button is out, and the disc must stay where it was.
+            int baseW = Px(Width);
+            var disc = new Rectangle(w - baseW + (baseW - d) / 2, (h - d) / 2, d, d);
 
             // Corner radius of the outermost outline. Each inner outline (ring centre line, face)
             // is inset from it and loses the same amount of radius, so the corners stay concentric
@@ -181,6 +227,17 @@ namespace MediaController
                 var halo = Rectangle.Inflate(disc, grow, grow);
                 using (var br = new SolidBrush(Palette.Lift(_background, 0.14f)))
                 using (var path = ShapePath(halo, outer + grow))
+                    g.FillPath(br, path);
+            }
+
+            // The hover button, behind the disc: it slides out from under it. The disc's cell is
+            // filled first (in the halo colour, which is what the disc sits on while hovered) so
+            // the button cannot show through the gap between the ring and the art.
+            if (_t > 0)
+            {
+                DrawButton(g, disc, outer, d, ink);
+                using (var br = new SolidBrush(_hover ? Palette.Lift(_background, 0.14f) : _background))
+                using (var path = ShapePath(disc, outer))
                     g.FillPath(br, path);
             }
 
@@ -244,6 +301,82 @@ namespace MediaController
                     Glyphs.Note(g, face.X + face.Width / 2f, face.Y + face.Height / 2f, face.Width, ink);
                 }
             }
+        }
+
+        // Rests just left of the disc and starts hidden at its centre; alpha follows the slide so
+        // it is not a hard-edged disc popping out from behind another.
+        void DrawButton(Graphics g, Rectangle disc, float discRadius, int d, Color ink)
+        {
+            int bd = Px(ButtonDiameter);
+            float rest = disc.X - Px(ButtonGap) - bd / 2f;
+            float cx = disc.X + d / 2f + (rest - (disc.X + d / 2f)) * _t;
+            float cy = disc.Y + d / 2f;
+            var rect = new Rectangle((int)Math.Round(cx - bd / 2f), (int)Math.Round(cy - bd / 2f), bd, bd);
+            int a = (int)Math.Round(255 * _t);
+
+            Color fill = Palette.Lift(_background, _buttonHot ? 0.30f : 0.18f);
+            using (var br = new SolidBrush(Color.FromArgb(a, fill)))
+            using (var path = ShapePath(rect, Radius(bd)))
+                g.FillPath(br, path);
+
+            Color glyph = Color.FromArgb(a, ink);
+            if (_state.IsPlaying)
+                Glyphs.Pause(g, rect.X + bd / 2f, rect.Y + bd / 2f, bd * 0.42f, glyph);
+            else
+                Glyphs.Play(g, rect.X + bd / 2f, rect.Y + bd / 2f, bd * 0.42f, glyph);
+        }
+
+        // ---- slide ---------------------------------------------------------------------
+
+        bool Slidable { get { return _slide && _state.HasSession && _state.CanPlayPause; } }
+
+        // Starts whatever the current hover/session state calls for: grow the window and run the
+        // pump toward out, or run it toward back. Idle (settled) costs nothing: no pump runs.
+        void Kick()
+        {
+            if (_disposed || Handle == IntPtr.Zero) return;
+            bool want = _hover && Slidable;
+            if (want && !_wide) Resize(true);
+            if ((want ? _t < 1f : (_t > 0f || _wide)) && !_pump.Running)
+            {
+                _lastStep = _clock.ElapsedMilliseconds;
+                _pump.Start();
+            }
+        }
+
+        // Taken at the top of a paint, by measured time (see Motion.Rate).
+        void Step()
+        {
+            if (!_pump.Running) return;
+            long now = _clock.ElapsedMilliseconds;
+            int dt = (int)Math.Min(now - _lastStep, 50);
+            _lastStep = now;
+
+            float target = (_hover && Slidable) ? 1f : 0f;
+            Motion.Ease(ref _t, target, Motion.Rate(dt, SlideMs), Motion.ToneEpsilon);
+            if (_t == target)
+            {
+                _pump.Stop();
+                if (target == 0f) { _buttonHot = false; Resize(false); }
+            }
+        }
+
+        // Grows or shrinks the window leftward, keeping its right edge where it is.
+        void Resize(bool wide)
+        {
+            if (wide == _wide) return;
+            IntPtr parent = Native.GetParent(Handle);
+            if (parent == IntPtr.Zero) return;
+            Native.RECT r;
+            Native.GetWindowRect(Handle, out r);
+            _wide = wide;
+            int newW = PixelWidth;
+            var pt = new Native.POINT();
+            pt.X = r.Right - newW;
+            pt.Y = r.Top;
+            Native.ScreenToClient(parent, ref pt);
+            Native.SetWindowPos(Handle, IntPtr.Zero, pt.X, pt.Y, newW, r.Height,
+                Native.SWP_NOZORDER | Native.SWP_NOACTIVATE);
         }
 
         // ---- shape ---------------------------------------------------------------------
@@ -344,11 +477,27 @@ namespace MediaController
 
         // ---- input ---------------------------------------------------------------------
 
+        // Is a client x over the slid-out button? Everything left of the disc's cell, plus the
+        // gap up to the disc, belongs to it.
+        bool OnButton(int x)
+        {
+            return _wide && x < ClientWidth() - Px(Width) + Px(ButtonGap) - 1;
+        }
+
+        int ClientWidth()
+        {
+            Native.RECT r;
+            Native.GetWindowRect(Handle, out r);
+            return r.Width;
+        }
+
         void SetHover(bool on)
         {
             if (on == _hover) return;
             _hover = on;
+            if (!on) _buttonHot = false;
             Invalidate();
+            Kick();
         }
 
         protected override void WndProc(ref Message m)
@@ -356,6 +505,7 @@ namespace MediaController
             switch (m.Msg)
             {
                 case Native.WM_PAINT:
+                    Step();
                     Paint();
                     return;
 
@@ -376,6 +526,10 @@ namespace MediaController
                         _tracking = Native.TrackMouseEvent(ref tme);
                     }
                     SetHover(true);
+                    {
+                        bool hot = _t > 0.4f && OnButton(Native.LoWord(m.LParam));
+                        if (hot != _buttonHot) { _buttonHot = hot; Invalidate(); }
+                    }
                     break;
 
                 case Native.WM_MOUSELEAVE:
@@ -385,7 +539,9 @@ namespace MediaController
 
                 case Native.WM_LBUTTONUP:
                     {
-                        Action handler = Clicked;
+                        // Only once the button is mostly out: a click while it is still emerging
+                        // from behind the disc means the disc.
+                        Action handler = (_t > 0.4f && OnButton(Native.LoWord(m.LParam))) ? PlayPauseClicked : Clicked;
                         if (handler != null) handler();
                         return;
                     }

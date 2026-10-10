@@ -38,6 +38,9 @@ namespace MediaController
         /// <summary>"circle", "rounded" or "square".</summary>
         public TileShape Shape = TileShape.Circle;
 
+        /// <summary>Hovering the tile slides a play/pause button out to its left.</summary>
+        public bool HoverControl = true;
+
         /// <summary>Corner radius of the now-playing card at 96 DPI; 0 leaves it square.</summary>
         public int PanelRadius = 12;
 
@@ -87,6 +90,7 @@ namespace MediaController
                 // Unknown keys (an old "stripWidth") are ignored here and dropped on the next Save.
                 cfg.Margin = Clamp(Num(root, "margin", cfg.Margin), 0, 200);
                 cfg.Shape = ParseShape(Str(root, "tileShape", ""), cfg.Shape);
+                cfg.HoverControl = Bool(root, "hoverControl", cfg.HoverControl);
                 cfg.PanelRadius = Clamp(Num(root, "panelRadius", cfg.PanelRadius), 0, 40);
                 cfg.Diagnostics = Bool(root, "diagnostics", cfg.Diagnostics);
 
@@ -117,6 +121,7 @@ namespace MediaController
             Margin = o.Margin;
             Shape = o.Shape;
             PanelRadius = o.PanelRadius;
+            HoverControl = o.HoverControl;
             Diagnostics = o.Diagnostics;
             HotkeyPlayPause = o.HotkeyPlayPause;
             HotkeyNext = o.HotkeyNext;
@@ -135,6 +140,7 @@ namespace MediaController
                 sb.Append("  \"pinnedApp\": ").Append(js.Serialize(PinnedApp)).Append(",\r\n");
                 sb.Append("  \"margin\": ").Append(Margin).Append(",\r\n");
                 sb.Append("  \"tileShape\": ").Append(js.Serialize(Shape.ToString().ToLowerInvariant())).Append(",\r\n");
+                sb.Append("  \"hoverControl\": ").Append(HoverControl ? "true" : "false").Append(",\r\n");
                 sb.Append("  \"panelRadius\": ").Append(PanelRadius).Append(",\r\n");
                 sb.Append("  \"diagnostics\": ").Append(Diagnostics ? "true" : "false").Append(",\r\n");
                 sb.Append("  \"hotkeys\": {\r\n");

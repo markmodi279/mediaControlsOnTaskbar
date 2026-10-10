@@ -140,7 +140,8 @@ namespace MediaController
             // margin change: the tile is rebuilt, and rebuilding drops the panel too.
             bool relayout = next.Margin != _cfg.Margin
                 || next.Shape != _cfg.Shape
-                || next.PanelRadius != _cfg.PanelRadius;
+                || next.PanelRadius != _cfg.PanelRadius
+                || next.HoverControl != _cfg.HoverControl;
             bool rebind = next.HotkeyPlayPause != _cfg.HotkeyPlayPause
                 || next.HotkeyNext != _cfg.HotkeyNext
                 || next.HotkeyPrevious != _cfg.HotkeyPrevious
@@ -174,9 +175,11 @@ namespace MediaController
             Rectangle bounds;
             if (!_host.TryComputeBounds(width, margin, out bounds)) return;
 
-            _tile = new MediaTile(_host.TrayWindow, bounds, _background, _host.DpiScale, _cfg.Shape);
+            _tile = new MediaTile(_host.TrayWindow, bounds, _background, _host.DpiScale, _cfg.Shape,
+                _cfg.HoverControl && !_host.IsVertical);
             _tile.Clicked += OnTileClicked;
             _tile.MiddleClicked += OnTileMiddleClicked;
+            _tile.PlayPauseClicked += OnTileMiddleClicked;
             _tile.ContextMenuRequested += OnContextMenu;
             Native.SetWindowPos(_tile.Handle, Native.HWND_TOP, bounds.X, bounds.Y,
                 bounds.Width, bounds.Height, Native.SWP_NOACTIVATE | Native.SWP_SHOWWINDOW);
@@ -191,6 +194,7 @@ namespace MediaController
             if (_tile == null) return;
             _tile.Clicked -= OnTileClicked;
             _tile.MiddleClicked -= OnTileMiddleClicked;
+            _tile.PlayPauseClicked -= OnTileMiddleClicked;
             _tile.ContextMenuRequested -= OnContextMenu;
             _tile.Dispose();
             _tile = null;
@@ -218,7 +222,7 @@ namespace MediaController
             {
                 // Keeps us above the task buttons in z-order. Following the neighbour as it
                 // grows is FollowNeighbour's job, which runs much more often.
-                _host.Reassert(_tile.Handle, _host.Scale(MediaTile.Width), _host.Scale(_cfg.Margin));
+                _host.Reassert(_tile.Handle, _tile.PixelWidth, _host.Scale(_cfg.Margin));
                 _lastAnchor = _host.AnchorX();
             }
 
@@ -255,7 +259,7 @@ namespace MediaController
             int a = _host.AnchorX();
             if (a == _lastAnchor) return;
             _lastAnchor = a;
-            _host.Reassert(_tile.Handle, _host.Scale(MediaTile.Width), _host.Scale(_cfg.Margin));
+            _host.Reassert(_tile.Handle, _tile.PixelWidth, _host.Scale(_cfg.Margin));
         }
 
         // ---- media ---------------------------------------------------------------------
@@ -343,9 +347,9 @@ namespace MediaController
                 _panel.SeekRequested += OnSeek;
             }
             Refresh();   // so it opens showing now, not up to a second ago
-            Native.RECT r;
-            Native.GetWindowRect(_tile.Handle, out r);
-            _panel.Open(new Rectangle(r.Left, r.Top, r.Width, r.Height));
+            // The art disc, not the whole window: with the hover button out the window is wider
+            // and the card would centre on the middle of both.
+            _panel.Open(_tile.DiscScreenBounds());
         }
 
         void DestroyPanel()
