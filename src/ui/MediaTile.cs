@@ -523,6 +523,15 @@ namespace MediaController
                     m.Result = (IntPtr)1;
                     return;
 
+                case Native.WM_SETCURSOR:
+                    // A bare NativeWindow gets no default cursor handling (that is a Control
+                    // behaviour), so without this the pointer keeps whatever cursor was active
+                    // before it arrived - a taskbar resize arrow, a stray busy cursor. Same fix
+                    // as DesktopSwitcher's strip (its commit 277b02a).
+                    Cursor.Current = Cursors.Default;
+                    m.Result = (IntPtr)1;
+                    return;
+
                 case Native.WM_MOUSEMOVE:
                     if (!_tracking)
                     {

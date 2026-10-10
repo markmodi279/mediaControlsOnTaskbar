@@ -566,6 +566,12 @@ namespace MediaController
                     m.Result = (IntPtr)Native.MA_NOACTIVATE;
                     return;
 
+                case Native.WM_SETCURSOR:
+                    // See MediaTile: a bare NativeWindow keeps whatever cursor was active before.
+                    Cursor.Current = Cursors.Default;
+                    m.Result = (IntPtr)1;
+                    return;
+
                 case Native.WM_MOUSEMOVE:
                     {
                         int x = Native.LoWord(m.LParam), y = Native.HiWord(m.LParam);

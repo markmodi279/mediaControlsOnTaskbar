@@ -19,6 +19,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(wslpath -w tools/shot
 | `mclick.ps1 -x X -y Y` | Moves, then middle-clicks. |
 | `drag.ps1 -x1 -y1 -x2 -y2` | Presses at the first point, moves to the second in steps, releases. Drives the seek bar. |
 | `keys.ps1 -chord ctrl+alt+space` | Sends a key chord: ctrl, alt, shift, space, left, right, up, down, f9, f10, m. |
+| `windows.ps1` | Prints every child window of the taskbar (class, parent, rectangle, owner pid, caption). Read-only. Shows where Start, search, the task buttons, the tray, DesktopSwitcher's strip and the tile sit. |
 
 All of them mark themselves DPI-aware first, so coordinates are physical pixels and match the
 PNGs. Find where the tile is from a fresh `shot.ps1` - it moves when the tray or
