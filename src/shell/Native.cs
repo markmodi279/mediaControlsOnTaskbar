@@ -352,10 +352,40 @@ namespace MediaController
 
         public static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
         public const uint SWP_NOSIZE = 0x0001;
+        public const uint SWP_NOMOVE = 0x0002;
         public const uint SWP_NOREDRAW = 0x0008;
         public const uint SWP_HIDEWINDOW = 0x0080;
 
         public const uint LWA_ALPHA = 0x2;
+
+        // Per-pixel-alpha layered windows (HoverButton): a premultiplied bitmap pushed with
+        // UpdateLayeredWindow, which also takes the position and one overall alpha.
+        public const uint ULW_ALPHA = 0x2;
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct SIZE { public int cx, cy; }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct BLENDFUNCTION
+        {
+            public byte BlendOp, BlendFlags, SourceConstantAlpha, AlphaFormat;
+        }
+
+        [DllImport("user32.dll")]
+        public static extern bool UpdateLayeredWindow(IntPtr hWnd, IntPtr hdcDst, ref POINT pptDst, ref SIZE psize,
+            IntPtr hdcSrc, ref POINT pptSrc, uint crKey, ref BLENDFUNCTION pblend, uint dwFlags);
+
+        [DllImport("gdi32.dll")]
+        public static extern IntPtr CreateCompatibleDC(IntPtr hdc);
+
+        [DllImport("gdi32.dll")]
+        public static extern IntPtr SelectObject(IntPtr hdc, IntPtr obj);
+
+        [DllImport("gdi32.dll")]
+        public static extern bool DeleteObject(IntPtr obj);
+
+        [DllImport("gdi32.dll")]
+        public static extern bool DeleteDC(IntPtr hdc);
 
         [DllImport("gdi32.dll")]
         public static extern IntPtr CreateRoundRectRgn(int left, int top, int right, int bottom, int ellipseW, int ellipseH);

@@ -9,7 +9,7 @@ src/
   app/      Program  Controller  Config  ConfigWatcher  Log  AssemblyInfo
   media/    MediaService  MediaState  AlbumArt
   shell/    Native  HotkeyWindow  ClickWatcher  LocationWatcher
-  ui/       TaskbarHost  MediaTile  MediaPanel  Glyphs  FramePump  Motion  MenuTheme  Palette
+  ui/       TaskbarHost  MediaTile  HoverButton  MediaPanel  Glyphs  FramePump  Motion  MenuTheme  Palette
   selftest/ SelfTest
 ```
 
@@ -66,10 +66,12 @@ Owned by the Controller, decoded once per art key, disposed on change.
 **`ui/MediaTile`** is a bare `NativeWindow`, created as a child of the taskbar from the start
 (`WS_CHILD`, parent = `Shell_TrayWnd`, `WS_EX_NOACTIVATE` so a click never steals focus). It is
 owner-drawn into a back buffer: an art disc (circle, rounded square or square - `Config.Shape`), a ring that fills with progress, a hover halo.
-*Hover button:* the window grows leftward once when the pointer arrives (right edge fixed, so the disc does
-not move) and shrinks once after the slide back; the slide in between is painting only, stepped by a
-`FramePump` that exists only while it moves. `PixelWidth` is the live width the Controller positions by;
-the panel anchors on `DiscScreenBounds`, not the whole window.
+*Hover button:* `HoverButton`, a separate popup (the taskbar is only as tall as the tile) above the tile, or
+below for a top taskbar. Per-pixel alpha via `UpdateLayeredWindow`, not a region, so a 30 px circle keeps a
+smooth edge; fade and rise are stepped by a `FramePump` that runs only while it moves. The pointer leaves the
+tile to reach it, so a leave starts a 180 ms timer and the answer is read from the cursor position, not from
+messages. The Controller suppresses it while the panel is open. Moving the pointer over the tile asks again,
+because hover only changes once per visit.
 It knows nothing about media beyond the state it is handed, and reports left / middle / right clicks.
 No animation thread; the Controller's 1 s tick advances the ring.
 
@@ -134,7 +136,7 @@ the file); `TryRead` is for live reload (broken -> keep current settings).
 | `MediaTile` | `Rebuild` | `DestroyTile`: every rebuild, and exit |
 | `MediaPanel` | first open after a rebuild | `DestroyPanel`: with the tile, and exit |
 | `ClickWatcher` hook thread | each panel open | each panel close |
-| Frame thread, raised timer resolution | each panel open / close slide | when the slide ends |
+| Frame thread, raised timer resolution | each panel open / close slide, each hover-button show / hide | when the slide ends |
 | `AlbumArt` | when the art bytes arrive | track change, and exit |
 | Menu and its theme | each right click | next right click, and exit |
 

@@ -108,12 +108,11 @@ moment it is saved** - no restart.
 - `margin` - pixels at 96 DPI between the tile and its neighbour; scaled to the display.
 - `tileSide` - `left` puts the tile left of DesktopSwitcher's strip (the strip stays beside the clock).
   `right` puts the tile beside the clock and the strip steps left to make room. `right` needs a
-  DesktopSwitcher that knows the handshake (below), and turns the hover button off, because it would
-  slide out over the strip. Without DesktopSwitcher the setting changes nothing.
+  DesktopSwitcher that knows the handshake (see CLAUDE.md). Without DesktopSwitcher the setting changes nothing.
 - `tileShape` - `circle`, `rounded` or `square`. The art, the hover halo and the progress ring all follow
   it; the ring runs clockwise from top centre along the outline. Anything else means `circle`.
-- `hoverControl` - hovering the tile slides a play/pause button out to its left. Off, or on a vertical taskbar,
-  the tile stays 40 px wide.
+- `hoverControl` - hovering the tile shows a play/pause button just above it (below, for a top taskbar). It
+  fades away when the pointer leaves, and stays away while the panel is open. Not offered on a vertical taskbar.
 - `panelRadius` - corner radius of the card in pixels at 96 DPI, 0 to 40; `0` is square. The cut is a window
   region, so the corner edge is not anti-aliased (see ARCHITECTURE).
 - `diagnostics` - `true` writes `%APPDATA%\MediaController\log.txt`.

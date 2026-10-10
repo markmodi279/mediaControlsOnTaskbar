@@ -150,8 +150,7 @@ taskbar, a second monitor.
   can move the other's window. With `right`, the tile names its window `MediaControllerTileRight`
   (plain `MediaControllerTile` otherwise) and DesktopSwitcher's `TaskbarHost.AnchorScreenX` anchors
   to that window's left edge. The caption, not the tile's position, is what it reads, so the two
-  cannot each wait for the other. Rename it here and the strip lands under the tile. The hover button
-  is off on the right: it would slide out over the strip, and both apps re-assert z-order every second.
+  cannot each wait for the other. Rename it here and the strip lands under the tile.
 - **DesktopSwitcher docks in the same slot.** `TaskbarHost.AnchorScreenX` finds its strip by
   window caption (`DesktopSwitcherStrip`) and sits left of it. If that caption ever changes in
   the sibling, the two strips overlap.
@@ -161,7 +160,7 @@ taskbar, a second monitor.
   the 15.6 ms tick: measured ~37 fps with 45 ms gaps. `FramePump` is a thread that sleeps to a
   fixed 60 Hz schedule and only calls `InvalidateRect`, with `timeBeginPeriod(1)` held only while
   it runs; animation is stepped by measured time (`Motion.Rate`), not frame count. Do not
-  "simplify" it back. (It is used for the panel's slide and fade only; the seek bar's 20 Hz is a
+  "simplify" it back. (It is used for the panel's slide and fade and the hover button's only; the seek bar's 20 Hz is a
   plain Timer, which is fine at that rate.)
 - **Album art needs a hand-rolled stream read.** `AsStream()` is in the assembly that cannot be
   referenced. `Thumbnail.OpenReadAsync()` -> `DataReader.LoadAsync(size)` -> `ReadBytes` works,

@@ -178,10 +178,11 @@ namespace MediaController
             if (!_host.TryComputeBounds(width, margin, out bounds)) return;
 
             _tile = new MediaTile(_host.TrayWindow, bounds, _background, _host.DpiScale, _cfg.Shape,
-                // On the right the button would slide out over the strip beside it, and both apps
-                // re-assert their z-order every second, so it would flicker between the two.
-                _cfg.HoverControl && !_host.IsVertical && _cfg.Side == TileSide.Left,
+                // Above the tile there is no room on a vertical taskbar worth the code.
+                _cfg.HoverControl && !_host.IsVertical,
                 _cfg.Side == TileSide.Right);
+            // The panel opens where the hover button would be, and has transport buttons of its own.
+            _tile.Suppressed = delegate { return _panel != null && _panel.IsOpen; };
             _tile.Clicked += OnTileClicked;
             _tile.MiddleClicked += OnTileMiddleClicked;
             _tile.PlayPauseClicked += OnTileMiddleClicked;
@@ -227,7 +228,7 @@ namespace MediaController
             {
                 // Keeps us above the task buttons in z-order. Following the neighbour as it
                 // grows is FollowNeighbour's job, which runs much more often.
-                _host.Reassert(_tile.Handle, _tile.PixelWidth, _host.Scale(_cfg.Margin));
+                _host.Reassert(_tile.Handle, _host.Scale(MediaTile.Width), _host.Scale(_cfg.Margin));
                 _lastAnchor = _host.AnchorX();
             }
 
@@ -264,7 +265,7 @@ namespace MediaController
             int a = _host.AnchorX();
             if (a == _lastAnchor) return;
             _lastAnchor = a;
-            _host.Reassert(_tile.Handle, _tile.PixelWidth, _host.Scale(_cfg.Margin));
+            _host.Reassert(_tile.Handle, _host.Scale(MediaTile.Width), _host.Scale(_cfg.Margin));
         }
 
         // ---- media ---------------------------------------------------------------------
@@ -352,9 +353,9 @@ namespace MediaController
                 _panel.SeekRequested += OnSeek;
             }
             Refresh();   // so it opens showing now, not up to a second ago
-            // The art disc, not the whole window: with the hover button out the window is wider
-            // and the card would centre on the middle of both.
-            _panel.Open(_tile.DiscScreenBounds());
+            Native.RECT r;
+            Native.GetWindowRect(_tile.Handle, out r);
+            _panel.Open(new Rectangle(r.Left, r.Top, r.Width, r.Height));
         }
 
         void DestroyPanel()
