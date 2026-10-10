@@ -27,8 +27,9 @@ namespace MediaController
     /// SetCapture so it keeps tracking when the pointer leaves the card.
     ///
     /// Opening and closing slide a few pixels toward the taskbar and fade. It is a layered
-    /// window with one alpha for the whole thing, so text stays ClearType: it is drawn onto
-    /// opaque pixels of its own back buffer and the alpha is applied after.
+    /// window, pushed with UpdateLayeredWindow so the four rounded corners are anti-aliased
+    /// (a window region cannot do that). Text stays ClearType: it is drawn onto opaque pixels
+    /// of the back buffer, and only afterwards are the corner pixels given their alpha.
     /// </summary>
     sealed class MediaPanel : NativeWindow, IDisposable
     {
@@ -63,6 +64,9 @@ namespace MediaController
         MediaState _state = MediaState.None;
         AlbumArt _art;
         Bitmap _buffer;
+        int[] _pixels;       // the buffer's pixels, copied out to fix up alpha
+        byte[] _mask;        // rounded-rect coverage, 255 inside, per pixel of the buffer
+        IntPtr _memDc, _hBitmap, _oldBitmap;
         ClickWatcher _watcher;
         bool _disposed;
 
@@ -106,8 +110,8 @@ namespace MediaController
             cp.Width = Px(W);
             cp.Height = Px(H);
             CreateHandle(cp);
-            Native.SetLayeredWindowAttributes(Handle, 0, 0, Native.LWA_ALPHA);
-            RoundCorners();
+            // No SetLayeredWindowAttributes: once it has been called the window can no longer
+            // be updated with UpdateLayeredWindow.
 
             _pump = new FramePump(Handle, "MediaPanel frames");
 
@@ -124,17 +128,35 @@ namespace MediaController
         // Corner radius at 96 DPI; 0 leaves the card square.
         readonly int _radius;
 
-        // A window region, not per-pixel alpha: the fade is one constant alpha for the whole
-        // window (SetLayeredWindowAttributes), which keeps ClearType because the text is drawn
-        // onto opaque pixels, and a region leaves that path alone. The price is that a region's
-        // edge is not anti-aliased, so the cut is a hard staircase; Draw strokes a smooth rounded
-        // border just inside it to soften the look. Right and bottom are exclusive in GDI, hence
-        // the +1. The system owns the region once it is set, so it is not deleted here.
-        void RoundCorners()
+        // A window region was tried first and left a hard staircase on the corners that no
+        // border drawn over it could hide, so the card is per-pixel alpha instead. Only the
+        // corners are partly transparent; every other pixel is opaque, so ClearType survives.
+        void BuildMask(int w, int h)
         {
-            if (_radius <= 0) return;
-            int d = Px(_radius) * 2;
-            Native.SetWindowRgn(Handle, Native.CreateRoundRectRgn(0, 0, Px(W) + 1, Px(H) + 1, d, d), false);
+            if (_mask != null && _mask.Length == w * h) return;
+            _mask = new byte[w * h];
+            if (_radius <= 0)
+            {
+                for (int i = 0; i < _mask.Length; i++) _mask[i] = 255;
+                return;
+            }
+            using (var bmp = new Bitmap(w, h, System.Drawing.Imaging.PixelFormat.Format32bppArgb))
+            {
+                using (Graphics g = Graphics.FromImage(bmp))
+                {
+                    g.Clear(Color.Black);
+                    g.SmoothingMode = SmoothingMode.AntiAlias;
+                    g.PixelOffsetMode = PixelOffsetMode.Half;
+                    using (var path = AlbumArt.RoundedRect(new Rectangle(0, 0, w, h), Px(_radius)))
+                        g.FillPath(Brushes.White, path);
+                }
+                var data = bmp.LockBits(new Rectangle(0, 0, w, h), System.Drawing.Imaging.ImageLockMode.ReadOnly,
+                    System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+                var px = new int[w * h];
+                System.Runtime.InteropServices.Marshal.Copy(data.Scan0, px, 0, px.Length);
+                bmp.UnlockBits(data);
+                for (int i = 0; i < px.Length; i++) _mask[i] = (byte)(px[i] & 0xFF);
+            }
         }
 
         Font MakeFont(string name, float px, FontStyle style)
@@ -175,7 +197,9 @@ namespace MediaController
             if (!_visible)
             {
                 _t = 0;
-                Native.SetLayeredWindowAttributes(Handle, 0, 0, Native.LWA_ALPHA);
+                // Pushed at alpha 0 before it is shown, or the last frame of the previous
+                // fade flashes up for a moment.
+                Present();
                 Native.SetWindowPos(Handle, Native.HWND_TOPMOST, x, y + Offset(), w, h,
                     Native.SWP_NOACTIVATE | Native.SWP_SHOWWINDOW);
                 _visible = true;
@@ -237,10 +261,6 @@ namespace MediaController
             float target = _open ? 1f : 0f;
             Motion.Ease(ref _t, target, Motion.Rate(dt, AnimMs), Motion.ToneEpsilon);
 
-            Native.SetLayeredWindowAttributes(Handle, 0, (byte)Math.Round(255f * _t), Native.LWA_ALPHA);
-            Native.SetWindowPos(Handle, Native.HWND_TOPMOST, _home.X, _home.Y + Offset(), 0, 0,
-                Native.SWP_NOSIZE | Native.SWP_NOACTIVATE);
-
             if (_t == target)
             {
                 _pump.Stop();
@@ -272,6 +292,13 @@ namespace MediaController
             _pump.Dispose();
             if (_watcher != null) { _watcher.Dispose(); _watcher = null; }
             if (Handle != IntPtr.Zero) DestroyHandle();
+            if (_memDc != IntPtr.Zero)
+            {
+                if (_oldBitmap != IntPtr.Zero) Native.SelectObject(_memDc, _oldBitmap);
+                Native.DeleteDC(_memDc);
+                _memDc = IntPtr.Zero;
+            }
+            if (_hBitmap != IntPtr.Zero) { Native.DeleteObject(_hBitmap); _hBitmap = IntPtr.Zero; }
             if (_buffer != null) _buffer.Dispose();
             _titleFont.Dispose();
             _bodyFont.Dispose();
@@ -348,27 +375,63 @@ namespace MediaController
 
         // ---- painting ------------------------------------------------------------------
 
-        void Paint()
+        // Draws the card, gives the corners their alpha, and pushes the picture, the position
+        // and the fade alpha to the window in one call.
+        void Present()
         {
-            Native.PAINTSTRUCT ps;
-            IntPtr hdc = Native.BeginPaint(Handle, out ps);
-            try
+            if (Handle == IntPtr.Zero || _disposed) return;
+            int w = Px(W), h = Px(H);
+            if (_buffer == null || _buffer.Width != w || _buffer.Height != h)
             {
-                int w = Px(W), h = Px(H);
-                if (_buffer == null || _buffer.Width != w || _buffer.Height != h)
+                if (_buffer != null) _buffer.Dispose();
+                _buffer = new Bitmap(w, h, System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
+                _pixels = new int[w * h];
+            }
+            BuildMask(w, h);
+            using (Graphics g = Graphics.FromImage(_buffer))
+                Draw(g, w, h);
+
+            // GDI text writes zero into the alpha byte, so alpha is set for every pixel here:
+            // opaque inside, the mask's coverage (and premultiplied colour) in the corners.
+            var data = _buffer.LockBits(new Rectangle(0, 0, w, h), System.Drawing.Imaging.ImageLockMode.ReadWrite,
+                System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
+            System.Runtime.InteropServices.Marshal.Copy(data.Scan0, _pixels, 0, _pixels.Length);
+            for (int i = 0; i < _pixels.Length; i++)
+            {
+                int a = _mask[i];
+                int p = _pixels[i];
+                if (a == 255)
                 {
-                    if (_buffer != null) _buffer.Dispose();
-                    _buffer = new Bitmap(w, h, System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
+                    _pixels[i] = p | unchecked((int)0xFF000000);
                 }
-                using (Graphics g = Graphics.FromImage(_buffer))
-                    Draw(g, w, h);
-                using (Graphics screen = Graphics.FromHdc(hdc))
-                    screen.DrawImageUnscaled(_buffer, 0, 0);
+                else
+                {
+                    int r = ((p >> 16) & 0xFF) * a / 255, gr = ((p >> 8) & 0xFF) * a / 255, b = (p & 0xFF) * a / 255;
+                    _pixels[i] = (a << 24) | (r << 16) | (gr << 8) | b;
+                }
             }
-            finally
-            {
-                Native.EndPaint(Handle, ref ps);
-            }
+            System.Runtime.InteropServices.Marshal.Copy(_pixels, 0, data.Scan0, _pixels.Length);
+            _buffer.UnlockBits(data);
+
+            if (_memDc == IntPtr.Zero) _memDc = Native.CreateCompatibleDC(IntPtr.Zero);
+            IntPtr fresh = _buffer.GetHbitmap(Color.FromArgb(0));
+            IntPtr old = Native.SelectObject(_memDc, fresh);
+            if (_hBitmap == IntPtr.Zero) _oldBitmap = old;   // the DC's own 1x1, to put back on dispose
+            else Native.DeleteObject(_hBitmap);
+            _hBitmap = fresh;
+
+            var dst = new Native.POINT();
+            dst.X = _home.X;
+            dst.Y = _home.Y + Offset();
+            var size = new Native.SIZE();
+            size.cx = w;
+            size.cy = h;
+            var src = new Native.POINT();
+            var blend = new Native.BLENDFUNCTION();
+            blend.BlendOp = 0;   // AC_SRC_OVER
+            blend.SourceConstantAlpha = (byte)Math.Round(255f * _t);
+            blend.AlphaFormat = 1;   // AC_SRC_ALPHA: the bitmap carries its own alpha
+            Native.UpdateLayeredWindow(Handle, IntPtr.Zero, ref dst, ref size, _memDc, ref src, 0, ref blend, Native.ULW_ALPHA);
         }
 
         static string Time(TimeSpan t)
@@ -401,6 +464,8 @@ namespace MediaController
             g.InterpolationMode = InterpolationMode.HighQualityBicubic;
             g.PixelOffsetMode = PixelOffsetMode.Half;
             g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
+            // A 1 px border just inside the rounded edge; the corners outside it are made
+            // transparent by Present, anti-aliased.
             using (var edge = new Pen(Palette.Lift(card, 0.14f)))
             {
                 if (_radius <= 0)
@@ -554,9 +619,16 @@ namespace MediaController
             switch (m.Msg)
             {
                 case Native.WM_PAINT:
-                    Step();
-                    Paint();
-                    return;
+                    {
+                        // Nothing for GDI to paint in a layered window: validate the region,
+                        // then push a frame ourselves.
+                        Native.PAINTSTRUCT ps;
+                        Native.BeginPaint(Handle, out ps);
+                        Native.EndPaint(Handle, ref ps);
+                        Step();
+                        if (_visible) Present();
+                        return;
+                    }
 
                 case Native.WM_ERASEBKGND:
                     m.Result = (IntPtr)1;
