@@ -521,7 +521,25 @@ namespace MediaController
 
         // ---- tray icon -----------------------------------------------------------------
 
+        // The tray shows the same icon as the exe (assets\MediaController.ico, stamped in by
+        // -win32icon), so changing the .ico changes both. The drawn triangle below was the
+        // original tray icon, before the exe had one of its own; it stays as the fallback
+        // for when the exe's icon cannot be read.
         static Icon CreateIcon()
+        {
+            try
+            {
+                Icon own = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
+                if (own != null) return own;
+            }
+            catch (Exception ex)
+            {
+                Log.Write("controller: exe icon unavailable, drawing one - " + ex.Message);
+            }
+            return DrawIcon();
+        }
+
+        static Icon DrawIcon()
         {
             using (var bmp = new Bitmap(16, 16))
             {
