@@ -55,7 +55,7 @@ Output goes to `%LOCALAPPDATA%\MediaController\MediaController.exe`. Run it with
 | Panel: click or drag the bar | seek; released, the player jumps there |
 | Tray icon, right click | run at login, open the config, exit |
 
-The tile shows the album art in a circle with a progress ring in a colour taken from the art.
+The tile shows the album art (in a circle by default, see `tileShape`) with a progress ring in a colour taken from the art.
 Paused dims the art under a pause mark; with no art it is a plain disc with a note; with nothing
 playing it is an empty ring. The panel is tinted with the same colour.
 
@@ -90,6 +90,8 @@ moment it is saved** - no restart.
 {
   "pinnedApp": "",
   "margin": 6,
+  "tileShape": "circle",
+  "panelRadius": 12,
   "diagnostics": false,
   "hotkeys": {
     "playPause": "Ctrl+Alt+Space",
@@ -102,6 +104,10 @@ moment it is saved** - no restart.
 
 - `pinnedApp` - set by the menu; the app's id as Windows knows it, e.g. `brave.exe`.
 - `margin` - pixels at 96 DPI between the tile and its neighbour; scaled to the display.
+- `tileShape` - `circle`, `rounded` or `square`. The art, the hover halo and the progress ring all follow
+  it; the ring runs clockwise from top centre along the outline. Anything else means `circle`.
+- `panelRadius` - corner radius of the card in pixels at 96 DPI, 0 to 40; `0` is square. The cut is a window
+  region, so the corner edge is not anti-aliased (see ARCHITECTURE).
 - `diagnostics` - `true` writes `%APPDATA%\MediaController\log.txt`.
 - Hotkeys are zero or more of `Ctrl`, `Alt`, `Shift`, `Win`, then one key by its .NET `Keys`
   name (`Space`, `Left`, `F9`, `A`, `MediaNextTrack`) or a digit. `""` turns one off.

@@ -20,6 +20,9 @@ namespace MediaController
     /// obvious alternative - overwrite it with defaults - would silently destroy a hand-
     /// edited file over one misplaced comma.
     /// </summary>
+    /// <summary>Outline of the taskbar tile: its art, its progress ring and its hover halo all follow it.</summary>
+    enum TileShape { Circle, Rounded, Square }
+
     sealed class Config
     {
         public static readonly string Dir = Environment.ExpandEnvironmentVariables(@"%APPDATA%\MediaController");
@@ -31,6 +34,12 @@ namespace MediaController
 
         /// <summary>Gap between the tile and whatever it docks against, at 96 DPI.</summary>
         public int Margin = 6;
+
+        /// <summary>"circle", "rounded" or "square".</summary>
+        public TileShape Shape = TileShape.Circle;
+
+        /// <summary>Corner radius of the now-playing card at 96 DPI; 0 leaves it square.</summary>
+        public int PanelRadius = 12;
 
         /// <summary>Writes log.txt beside this file. Off by default.</summary>
         public bool Diagnostics;
@@ -77,6 +86,8 @@ namespace MediaController
                 cfg.PinnedApp = Str(root, "pinnedApp", cfg.PinnedApp);
                 // Unknown keys (an old "stripWidth") are ignored here and dropped on the next Save.
                 cfg.Margin = Clamp(Num(root, "margin", cfg.Margin), 0, 200);
+                cfg.Shape = ParseShape(Str(root, "tileShape", ""), cfg.Shape);
+                cfg.PanelRadius = Clamp(Num(root, "panelRadius", cfg.PanelRadius), 0, 40);
                 cfg.Diagnostics = Bool(root, "diagnostics", cfg.Diagnostics);
 
                 object hk;
@@ -104,6 +115,8 @@ namespace MediaController
         {
             PinnedApp = o.PinnedApp;
             Margin = o.Margin;
+            Shape = o.Shape;
+            PanelRadius = o.PanelRadius;
             Diagnostics = o.Diagnostics;
             HotkeyPlayPause = o.HotkeyPlayPause;
             HotkeyNext = o.HotkeyNext;
@@ -121,6 +134,8 @@ namespace MediaController
                 sb.Append("{\r\n");
                 sb.Append("  \"pinnedApp\": ").Append(js.Serialize(PinnedApp)).Append(",\r\n");
                 sb.Append("  \"margin\": ").Append(Margin).Append(",\r\n");
+                sb.Append("  \"tileShape\": ").Append(js.Serialize(Shape.ToString().ToLowerInvariant())).Append(",\r\n");
+                sb.Append("  \"panelRadius\": ").Append(PanelRadius).Append(",\r\n");
                 sb.Append("  \"diagnostics\": ").Append(Diagnostics ? "true" : "false").Append(",\r\n");
                 sb.Append("  \"hotkeys\": {\r\n");
                 sb.Append("    \"playPause\": ").Append(js.Serialize(HotkeyPlayPause)).Append(",\r\n");
@@ -134,6 +149,19 @@ namespace MediaController
             catch (Exception ex)
             {
                 Log.Write("config: could not write " + FilePath + " - " + ex.Message);
+            }
+        }
+
+        // An unrecognised word falls back to the default (circle) rather than guessing at the
+        // nearest shape; the file is left as written, so the typo can be fixed in place.
+        static TileShape ParseShape(string s, TileShape fallback)
+        {
+            switch ((s ?? "").Trim().ToLowerInvariant())
+            {
+                case "circle": return TileShape.Circle;
+                case "rounded": return TileShape.Rounded;
+                case "square": return TileShape.Square;
+                default: return fallback;
             }
         }
 

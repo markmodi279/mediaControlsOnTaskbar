@@ -73,6 +73,13 @@ namespace MediaController
                 g.FillEllipse(br, r);
         }
 
+        /// <summary>Fills <paramref name="path"/> with the art laid over <paramref name="r"/>.</summary>
+        public void DrawPath(Graphics g, Rectangle r, GraphicsPath path)
+        {
+            using (var br = Brush(r))
+                g.FillPath(br, path);
+        }
+
         /// <summary>Fills a rounded square (radius in pixels) with the art.</summary>
         public void DrawRounded(Graphics g, Rectangle r, int radius)
         {

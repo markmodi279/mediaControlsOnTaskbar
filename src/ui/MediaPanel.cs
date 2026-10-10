@@ -90,8 +90,9 @@ namespace MediaController
         /// <summary>The user released the seek bar at this position from the start of the track.</summary>
         public event Action<TimeSpan> SeekRequested;
 
-        public MediaPanel(Color taskbarColor, double dpiScale)
+        public MediaPanel(Color taskbarColor, double dpiScale, int cornerRadius)
         {
+            _radius = cornerRadius;
             _taskbar = taskbarColor;
             _dpiScale = dpiScale;
             _titleFont = MakeFont("Segoe UI Semibold", 15, FontStyle.Regular);
@@ -106,6 +107,7 @@ namespace MediaController
             cp.Height = Px(H);
             CreateHandle(cp);
             Native.SetLayeredWindowAttributes(Handle, 0, 0, Native.LWA_ALPHA);
+            RoundCorners();
 
             _pump = new FramePump(Handle, "MediaPanel frames");
 
@@ -117,6 +119,22 @@ namespace MediaController
             {
                 if (_visible && _state.IsPlaying && !_drag && !_pump.Running) Invalidate();
             };
+        }
+
+        // Corner radius at 96 DPI; 0 leaves the card square.
+        readonly int _radius;
+
+        // A window region, not per-pixel alpha: the fade is one constant alpha for the whole
+        // window (SetLayeredWindowAttributes), which keeps ClearType because the text is drawn
+        // onto opaque pixels, and a region leaves that path alone. The price is that a region's
+        // edge is not anti-aliased, so the cut is a hard staircase; Draw strokes a smooth rounded
+        // border just inside it to soften the look. Right and bottom are exclusive in GDI, hence
+        // the +1. The system owns the region once it is set, so it is not deleted here.
+        void RoundCorners()
+        {
+            if (_radius <= 0) return;
+            int d = Px(_radius) * 2;
+            Native.SetWindowRgn(Handle, Native.CreateRoundRectRgn(0, 0, Px(W) + 1, Px(H) + 1, d, d), false);
         }
 
         Font MakeFont(string name, float px, FontStyle style)
@@ -384,7 +402,13 @@ namespace MediaController
             g.PixelOffsetMode = PixelOffsetMode.Half;
             g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
             using (var edge = new Pen(Palette.Lift(card, 0.14f)))
-                g.DrawRectangle(edge, 0, 0, w - 1, h - 1);
+            {
+                if (_radius <= 0)
+                    g.DrawRectangle(edge, 0, 0, w - 1, h - 1);
+                else
+                    using (var path = AlbumArt.RoundedRect(new Rectangle(0, 0, w - 1, h - 1), Px(_radius)))
+                        g.DrawPath(edge, path);
+            }
 
             // Art, or a quiet placeholder.
             Rectangle art = ArtRect;

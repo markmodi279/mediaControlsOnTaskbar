@@ -351,6 +351,12 @@ namespace MediaController
 
         public const uint LWA_ALPHA = 0x2;
 
+        [DllImport("gdi32.dll")]
+        public static extern IntPtr CreateRoundRectRgn(int left, int top, int right, int bottom, int ellipseW, int ellipseH);
+
+        [DllImport("user32.dll")]
+        public static extern int SetWindowRgn(IntPtr hWnd, IntPtr hRgn, bool redraw);
+
         [DllImport("user32.dll")]
         public static extern bool SetLayeredWindowAttributes(IntPtr hWnd, uint colorKey, byte alpha, uint flags);
 

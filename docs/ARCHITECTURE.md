@@ -64,13 +64,16 @@ Owned by the Controller, decoded once per art key, disposed on change.
 
 **`ui/MediaTile`** is a bare `NativeWindow`, created as a child of the taskbar from the start
 (`WS_CHILD`, parent = `Shell_TrayWnd`, `WS_EX_NOACTIVATE` so a click never steals focus). It is
-owner-drawn into a back buffer: a round art disc, a ring that fills with progress, a hover halo.
+owner-drawn into a back buffer: an art disc (circle, rounded square or square - `Config.Shape`), a ring that fills with progress, a hover halo.
 It knows nothing about media beyond the state it is handed, and reports left / middle / right clicks.
 No animation thread; the Controller's 1 s tick advances the ring.
 
 **`ui/MediaPanel`** is the card: a top-level `WS_POPUP`, topmost, tool-window, **no-activate and
 layered**, owner-drawn. Unlike DesktopSwitcher's stats panel it is clickable, but like it, it never
 takes focus (`MA_NOACTIVATE`), so it cannot get keys and has no Esc.
+- *Corners:* `panelRadius` rounds the card with `SetWindowRgn`, not per-pixel alpha, because the fade is one
+  constant layered alpha and a region leaves that path untouched. A region edge is not anti-aliased; `Draw`
+  strokes a smooth rounded border just inside it. Shape and radius changes rebuild the tile (and so the panel).
 - *Opening:* anchored above the tile (below, for a top taskbar), clamped to the work area. Slides 8 px
   toward the taskbar and fades, by `Motion.Rate` against measured time, driven by a `FramePump`
   that runs only during the slide. One layered alpha for the whole window, text drawn onto opaque

@@ -136,7 +136,11 @@ namespace MediaController
             Config next;
             if (!Config.TryRead(out next)) return;
 
-            bool relayout = next.Margin != _cfg.Margin;
+            // Shape and corner radius are baked in at construction, so they take the same path as a
+            // margin change: the tile is rebuilt, and rebuilding drops the panel too.
+            bool relayout = next.Margin != _cfg.Margin
+                || next.Shape != _cfg.Shape
+                || next.PanelRadius != _cfg.PanelRadius;
             bool rebind = next.HotkeyPlayPause != _cfg.HotkeyPlayPause
                 || next.HotkeyNext != _cfg.HotkeyNext
                 || next.HotkeyPrevious != _cfg.HotkeyPrevious
@@ -170,7 +174,7 @@ namespace MediaController
             Rectangle bounds;
             if (!_host.TryComputeBounds(width, margin, out bounds)) return;
 
-            _tile = new MediaTile(_host.TrayWindow, bounds, _background, _host.DpiScale);
+            _tile = new MediaTile(_host.TrayWindow, bounds, _background, _host.DpiScale, _cfg.Shape);
             _tile.Clicked += OnTileClicked;
             _tile.MiddleClicked += OnTileMiddleClicked;
             _tile.ContextMenuRequested += OnContextMenu;
@@ -334,7 +338,7 @@ namespace MediaController
             // DPI scale it was made for, and both can change with the taskbar.
             if (_panel == null)
             {
-                _panel = new MediaPanel(_background, _host.DpiScale);
+                _panel = new MediaPanel(_background, _host.DpiScale, _cfg.PanelRadius);
                 _panel.ButtonClicked += OnPanelButton;
                 _panel.SeekRequested += OnSeek;
             }
