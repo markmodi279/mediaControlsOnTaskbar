@@ -375,8 +375,16 @@ namespace MediaController
             pt.X = r.Right - newW;
             pt.Y = r.Top;
             Native.ScreenToClient(parent, ref pt);
+            // NOCOPYBITS: by default Windows keeps the old pixels and pastes them at the new
+            // window's top-left until the next paint. Growing leftward that puts the disc 34 px
+            // too far left for a frame, and shrinking shows the button where the disc should be -
+            // seen as the tile jumping sideways each time the pointer crossed it. Discarding them
+            // leaves the whole client invalid, so the first paint is complete.
             Native.SetWindowPos(Handle, IntPtr.Zero, pt.X, pt.Y, newW, r.Height,
-                Native.SWP_NOZORDER | Native.SWP_NOACTIVATE);
+                Native.SWP_NOZORDER | Native.SWP_NOACTIVATE | Native.SWP_NOCOPYBITS);
+            // Growing happens from a mouse message, so paint the new size now rather than at the
+            // next idle. Shrinking happens inside a WM_PAINT that is about to paint it anyway.
+            if (wide) Native.UpdateWindow(Handle);
         }
 
         // ---- shape ---------------------------------------------------------------------
