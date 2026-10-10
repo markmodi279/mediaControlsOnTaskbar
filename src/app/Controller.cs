@@ -139,6 +139,7 @@ namespace MediaController
             // Shape and corner radius are baked in at construction, so they take the same path as a
             // margin change: the tile is rebuilt, and rebuilding drops the panel too.
             bool relayout = next.Margin != _cfg.Margin
+                || next.Side != _cfg.Side
                 || next.Shape != _cfg.Shape
                 || next.PanelRadius != _cfg.PanelRadius
                 || next.HoverControl != _cfg.HoverControl;
@@ -164,6 +165,7 @@ namespace MediaController
             DestroyTile();
             if (!_host.Locate() || !_host.HasAnchor) return;   // the tick retries
 
+            _host.RightOfNeighbour = _cfg.Side == TileSide.Right;
             int width = _host.Scale(MediaTile.Width);
             int margin = _host.Scale(_cfg.Margin);
 
@@ -176,7 +178,10 @@ namespace MediaController
             if (!_host.TryComputeBounds(width, margin, out bounds)) return;
 
             _tile = new MediaTile(_host.TrayWindow, bounds, _background, _host.DpiScale, _cfg.Shape,
-                _cfg.HoverControl && !_host.IsVertical);
+                // On the right the button would slide out over the strip beside it, and both apps
+                // re-assert their z-order every second, so it would flicker between the two.
+                _cfg.HoverControl && !_host.IsVertical && _cfg.Side == TileSide.Left,
+                _cfg.Side == TileSide.Right);
             _tile.Clicked += OnTileClicked;
             _tile.MiddleClicked += OnTileMiddleClicked;
             _tile.PlayPauseClicked += OnTileMiddleClicked;

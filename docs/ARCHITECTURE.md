@@ -54,7 +54,8 @@ Nothing outside `MediaService` ever holds a WinRT object. It reads once into an 
 **`ui/TaskbarHost`** finds `Shell_TrayWnd`, its notification area and rebar, reads the DPI,
 computes where the tile belongs, and samples the taskbar's colour. Copied from DesktopSwitcher
 with one change: `AnchorScreenX` anchors to the DesktopSwitcher strip's left edge when that
-strip is docked, so the two do not overlap. It is looked up by caption on every call, not
+strip is docked, so the two do not overlap. On the right (`Config.Side`) it does not yield at all: the tile takes the slot beside the clock, names itself
+`MediaControllerTileRight`, and the strip anchors to it instead. It is looked up by caption on every call, not
 cached, because it moves each time a desktop is added or removed.
 
 **`media/AlbumArt`** is a decoded cover: a centre-cropped square plus an accent colour (a

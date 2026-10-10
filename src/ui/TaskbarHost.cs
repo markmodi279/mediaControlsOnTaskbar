@@ -127,13 +127,36 @@ namespace MediaController
             if (_notifyArea != IntPtr.Zero && Native.GetWindowRect(_notifyArea, out notify))
                 x = notify.Left;
 
-            IntPtr neighbour = Native.FindWindowEx(_tray, IntPtr.Zero, null, NeighbourCaption);
+            // On the right the tile owns the slot beside the clock and the strip steps aside
+            // for it (DesktopSwitcher finds the tile by its "...Right" caption), so there is
+            // nothing to yield to here.
+            if (RightOfNeighbour) return x;
+
             Native.RECT n;
-            if (neighbour != IntPtr.Zero && Native.IsWindowVisible(neighbour)
-                && Native.GetWindowRect(neighbour, out n) && n.Left < x && n.Left > tray.Left)
+            IntPtr neighbour = Neighbour();
+            if (neighbour != IntPtr.Zero && GetNeighbourRect(neighbour, tray, x, out n))
                 x = n.Left;
 
             return x;
+        }
+
+        /// <summary>
+        /// True when the tile docks beside the clock and DesktopSwitcher's strip sits left of
+        /// it. The tile then names itself differently (see MediaTile) so the strip can tell.
+        /// </summary>
+        public bool RightOfNeighbour;
+
+        IntPtr Neighbour()
+        {
+            return _tray == IntPtr.Zero ? IntPtr.Zero
+                : Native.FindWindowEx(_tray, IntPtr.Zero, null, NeighbourCaption);
+        }
+
+        bool GetNeighbourRect(IntPtr neighbour, Native.RECT tray, int anchorX, out Native.RECT n)
+        {
+            n = new Native.RECT();
+            return Native.IsWindowVisible(neighbour) && Native.GetWindowRect(neighbour, out n)
+                && n.Left < anchorX && n.Left > tray.Left;
         }
 
         /// <summary>Process id of the DesktopSwitcher strip's owner, or 0 if it is not docked.</summary>
@@ -266,6 +289,15 @@ namespace MediaController
             // any DPI, which on a 150% display is barely five of the ones the layout is
             // authored in and leaves the probe hugging the tile's edge.
             int x = anchorScreenX - margin - tileWidth - Scale(8);
+            // On the right, what is left of the tile is the strip, not empty taskbar: probe
+            // left of the strip instead, or the sample is one of its (possibly lit) buttons.
+            if (RightOfNeighbour)
+            {
+                Native.RECT sn;
+                IntPtr nb = Neighbour();
+                if (nb != IntPtr.Zero && GetNeighbourRect(nb, tray, anchorScreenX, out sn))
+                    x = sn.Left - Scale(8);
+            }
             int y = tray.Top + tray.Height / 2;
             if (x < tray.Left) x = tray.Left + Scale(4);
 

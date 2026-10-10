@@ -146,6 +146,12 @@ taskbar, a second monitor.
 - **SMTC raises 2-3 events per change.** A 100 ms one-shot timer coalesces them.
 - **Position is not pushed.** SMTC gives a position and when it was valid; `Snapshot`
   extrapolates, clamped to the duration.
+- **`tileSide: right` is a handshake with the sibling.** Both apps dock beside the clock and neither
+  can move the other's window. With `right`, the tile names its window `MediaControllerTileRight`
+  (plain `MediaControllerTile` otherwise) and DesktopSwitcher's `TaskbarHost.AnchorScreenX` anchors
+  to that window's left edge. The caption, not the tile's position, is what it reads, so the two
+  cannot each wait for the other. Rename it here and the strip lands under the tile. The hover button
+  is off on the right: it would slide out over the strip, and both apps re-assert z-order every second.
 - **DesktopSwitcher docks in the same slot.** `TaskbarHost.AnchorScreenX` finds its strip by
   window caption (`DesktopSwitcherStrip`) and sits left of it. If that caption ever changes in
   the sibling, the two strips overlap.

@@ -80,7 +80,7 @@ namespace MediaController
         /// <summary>Right click, at the pointer in screen coordinates.</summary>
         public event Action<Point> ContextMenuRequested;
 
-        public MediaTile(IntPtr parent, Rectangle bounds, Color background, double dpiScale, TileShape shape, bool slide)
+        public MediaTile(IntPtr parent, Rectangle bounds, Color background, double dpiScale, TileShape shape, bool slide, bool rightOfNeighbour)
         {
             _shape = shape;
             _slide = slide;
@@ -88,7 +88,10 @@ namespace MediaController
             _background = background;
 
             var cp = new CreateParams();
-            cp.Caption = "MediaControllerTile";
+            // The caption is how DesktopSwitcher finds this window. The "Right" form says the tile is
+            // beside the clock and the strip must anchor to its left edge; it is chosen at
+            // creation, and a change of side rebuilds the tile.
+            cp.Caption = rightOfNeighbour ? "MediaControllerTileRight" : "MediaControllerTile";
             cp.X = bounds.X;
             cp.Y = bounds.Y;
             cp.Width = bounds.Width;

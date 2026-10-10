@@ -23,6 +23,9 @@ namespace MediaController
     /// <summary>Outline of the taskbar tile: its art, its progress ring and its hover halo all follow it.</summary>
     enum TileShape { Circle, Rounded, Square }
 
+    /// <summary>Which side of DesktopSwitcher's strip the tile docks on.</summary>
+    enum TileSide { Left, Right }
+
     sealed class Config
     {
         public static readonly string Dir = Environment.ExpandEnvironmentVariables(@"%APPDATA%\MediaController");
@@ -34,6 +37,12 @@ namespace MediaController
 
         /// <summary>Gap between the tile and whatever it docks against, at 96 DPI.</summary>
         public int Margin = 6;
+
+        /// <summary>
+        /// "left": the tile sits left of DesktopSwitcher's strip (the strip stays beside the
+        /// clock). "right": the tile takes the slot beside the clock and the strip moves left.
+        /// </summary>
+        public TileSide Side = TileSide.Left;
 
         /// <summary>"circle", "rounded" or "square".</summary>
         public TileShape Shape = TileShape.Circle;
@@ -89,6 +98,8 @@ namespace MediaController
                 cfg.PinnedApp = Str(root, "pinnedApp", cfg.PinnedApp);
                 // Unknown keys (an old "stripWidth") are ignored here and dropped on the next Save.
                 cfg.Margin = Clamp(Num(root, "margin", cfg.Margin), 0, 200);
+                cfg.Side = string.Equals(Str(root, "tileSide", ""), "right", StringComparison.OrdinalIgnoreCase)
+                    ? TileSide.Right : TileSide.Left;
                 cfg.Shape = ParseShape(Str(root, "tileShape", ""), cfg.Shape);
                 cfg.HoverControl = Bool(root, "hoverControl", cfg.HoverControl);
                 cfg.PanelRadius = Clamp(Num(root, "panelRadius", cfg.PanelRadius), 0, 40);
@@ -119,6 +130,7 @@ namespace MediaController
         {
             PinnedApp = o.PinnedApp;
             Margin = o.Margin;
+            Side = o.Side;
             Shape = o.Shape;
             PanelRadius = o.PanelRadius;
             HoverControl = o.HoverControl;
@@ -139,6 +151,7 @@ namespace MediaController
                 sb.Append("{\r\n");
                 sb.Append("  \"pinnedApp\": ").Append(js.Serialize(PinnedApp)).Append(",\r\n");
                 sb.Append("  \"margin\": ").Append(Margin).Append(",\r\n");
+                sb.Append("  \"tileSide\": ").Append(js.Serialize(Side == TileSide.Right ? "right" : "left")).Append(",\r\n");
                 sb.Append("  \"tileShape\": ").Append(js.Serialize(Shape.ToString().ToLowerInvariant())).Append(",\r\n");
                 sb.Append("  \"hoverControl\": ").Append(HoverControl ? "true" : "false").Append(",\r\n");
                 sb.Append("  \"panelRadius\": ").Append(PanelRadius).Append(",\r\n");
