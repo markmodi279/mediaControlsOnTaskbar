@@ -311,47 +311,66 @@ namespace MediaController
             Rectangle bounds;
             if (!TryComputeBounds(width, margin, out bounds)) return false;
 
-            if (RightOfNeighbour) CarryNeighbour(child, bounds.X, margin);
+            // Worked out before the tile moves, since it is measured from where the tile is now.
+            IntPtr strip = IntPtr.Zero;
+            int stripX = 0, stripY = 0;
+            bool carry = RightOfNeighbour && PlanCarry(child, bounds.X, margin, out strip, out stripX, out stripY);
 
-            return Native.SetWindowPos(child, Native.HWND_TOP,
+            bool moved = Native.SetWindowPos(child, Native.HWND_TOP,
                 bounds.X, bounds.Y, bounds.Width, bounds.Height,
                 Native.SWP_NOACTIVATE | Native.SWP_SHOWWINDOW);
+
+            // After the tile, never before. Moving the strip first looked the natural order - no
+            // frame with the tile over it - and measured worse: the strip's SetWindowPos runs on
+            // DesktopSwitcher's thread, which then handles the tile-moved event queued by the
+            // previous step while the tile is still where it was, and "follows" it back to the old
+            // place. A recorded move went gap 8, 15, 8, 1, then settled: the strip jumping back
+            // and forth, up to 9 px of overlap. Tile first, an event handled in between reads the
+            // tile's new place, which is exactly where this puts the strip, so nothing disagrees.
+            if (carry)
+                Native.SetWindowPos(strip, IntPtr.Zero, stripX, stripY, 0, 0,
+                    Native.SWP_NOSIZE | Native.SWP_NOZORDER | Native.SWP_NOACTIVATE);
+
+            return moved;
         }
 
         /// <summary>
-        /// Moves DesktopSwitcher's strip by the same step as the tile, just before the tile moves.
+        /// Where DesktopSwitcher's strip has to go so it stays the same distance from the tile
+        /// when the tile moves to <paramref name="newClientX"/>; false when there is nothing to
+        /// carry.
         ///
         /// On the right of the strip the tile is the one that moves when a tray icon comes or
         /// goes, and the strip follows it from another process: a location hook, a message-loop
         /// turn, then its own SetWindowPos. That is a few milliseconds at best, and a few
         /// milliseconds is a frame the compositor can present - with the tile moving left, its
         /// edge showed over the strip's. Following can never close that gap, only shrink it. So
-        /// the leader carries the follower: both move in this one turn, the gap between them
-        /// does not change, and the strip's own follow, arriving later, finds it already there
-        /// and has nothing to do.
+        /// the leader carries the follower: it is moved in the same turn by the tile's own step,
+        /// the gap does not change, and the strip's own follow, arriving later, finds it there.
         ///
         /// Only when the strip is actually the tile's neighbour - to its left, close enough to
-        /// be the one DesktopSwitcher docked against us - and only by the tile's own step, so the
-        /// spacing DesktopSwitcher chose is kept whatever its margin is.
+        /// be the one DesktopSwitcher docked against us - and by the tile's step, so the spacing
+        /// DesktopSwitcher chose is kept whatever its margin is.
         /// </summary>
-        void CarryNeighbour(IntPtr tile, int newClientX, int margin)
+        bool PlanCarry(IntPtr tile, int newClientX, int margin, out IntPtr strip, out int x, out int y)
         {
-            IntPtr strip = Neighbour();
-            if (strip == IntPtr.Zero || !Native.IsWindowVisible(strip)) return;
+            x = y = 0;
+            strip = Neighbour();
+            if (strip == IntPtr.Zero || !Native.IsWindowVisible(strip)) return false;
 
             Native.RECT t, n;
-            if (!Native.GetWindowRect(tile, out t) || !Native.GetWindowRect(strip, out n)) return;
+            if (!Native.GetWindowRect(tile, out t) || !Native.GetWindowRect(strip, out n)) return false;
 
             var tp = new Native.POINT(); tp.X = t.Left; tp.Y = t.Top;
             var np = new Native.POINT(); np.X = n.Left; np.Y = n.Top;
-            if (!Native.ScreenToClient(_tray, ref tp) || !Native.ScreenToClient(_tray, ref np)) return;
+            if (!Native.ScreenToClient(_tray, ref tp) || !Native.ScreenToClient(_tray, ref np)) return false;
 
             int dx = newClientX - tp.X;
             int gap = t.Left - n.Right;
-            if (dx == 0 || gap < 0 || gap > margin * 2 + Scale(20)) return;
+            if (dx == 0 || gap < 0 || gap > margin * 2 + Scale(20)) return false;
 
-            Native.SetWindowPos(strip, IntPtr.Zero, np.X + dx, np.Y, 0, 0,
-                Native.SWP_NOSIZE | Native.SWP_NOZORDER | Native.SWP_NOACTIVATE);
+            x = np.X + dx;
+            y = np.Y;
+            return true;
         }
 
         /// <summary>
