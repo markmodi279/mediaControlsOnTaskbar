@@ -181,6 +181,73 @@ namespace MediaController
             return AnchorScreenX(tray);
         }
 
+        // --- glide ------------------------------------------------------------
+
+        /// <summary>
+        /// How long the tile takes to settle after the tray moves it.
+        ///
+        /// Not 100, which is what DesktopSwitcher's hover animations use. The ease is exponential,
+        /// so it covers the same fraction of what is left every frame, and for a 30 px move at
+        /// 100 ms that is 17 px in the first 15 ms frame - logged from a real move. It looks like
+        /// the tile jumping to the new place with a short tail, and the pixels it leaves behind at
+        /// the old place read as a second tile. At 300 ms the first frame is about 7 px.
+        /// </summary>
+        public const int GlideMs = 300;
+
+        int _glideLastRaw = int.MinValue;   // the anchor as last seen, before any glide
+        float _glideOffset;                 // pixels the shown anchor still lags the real one
+
+        /// <summary>True while the tile is still catching up with a moved anchor.</summary>
+        public bool Gliding { get { return _glideOffset != 0f; } }
+
+        public void ResetGlide()
+        {
+            _glideLastRaw = int.MinValue;
+            _glideOffset = 0f;
+        }
+
+        /// <summary>
+        /// The anchor the tile is drawn against: the real one plus whatever of the last move it
+        /// has not yet covered. Only on the right of the strip, where the anchor is the
+        /// notification area and a tray icon coming or going moves it. On the left the anchor is
+        /// the strip, which is already gliding itself, and the tile follows that exactly.
+        ///
+        /// This is the tile's half of a hand-off. DesktopSwitcher's strip sits against the tile
+        /// and follows its position frame by frame, so whatever the tile does is what the strip
+        /// does - with a jump here the strip jumps, and with an ease here both ease together and
+        /// neither overlaps the other. The offset form (remember how far behind, ease that to
+        /// zero) is the same one DesktopSwitcher uses: a second move mid-glide just adds to it.
+        /// </summary>
+        int GlideAnchor(int raw)
+        {
+            if (!RightOfNeighbour) { ResetGlide(); return raw; }
+            if (_glideLastRaw != int.MinValue && raw != _glideLastRaw)
+                _glideOffset += _glideLastRaw - raw;
+            _glideLastRaw = raw;
+            return raw + (int)Math.Round(_glideOffset);
+        }
+
+        /// <summary>True when the real anchor has moved since the tile was last placed against it.</summary>
+        public bool AnchorMoved()
+        {
+            return RightOfNeighbour && _glideLastRaw != int.MinValue && AnchorX() != _glideLastRaw;
+        }
+
+        /// <summary>One frame of the glide; true while there is more to do.</summary>
+        public bool StepGlide(int elapsedMs)
+        {
+            return Motion.Ease(ref _glideOffset, 0f, Motion.Rate(elapsedMs, GlideMs), Motion.PixelEpsilon);
+        }
+
+        /// <summary>Process id of Explorer, which owns the notification area; 0 if the taskbar is gone.</summary>
+        public uint TaskbarProcessId()
+        {
+            if (_tray == IntPtr.Zero) return 0;
+            uint pid;
+            Native.GetWindowThreadProcessId(_tray, out pid);
+            return pid;
+        }
+
         /// <summary>
         /// Tile bounds in Shell_TrayWnd client coordinates.
         ///
@@ -219,7 +286,7 @@ namespace MediaController
             }
 
             var topLeft = new Native.POINT();
-            topLeft.X = anchorScreenX - margin - width;
+            topLeft.X = GlideAnchor(anchorScreenX) - margin - width;
             topLeft.Y = tray.Top;
             if (!Native.ScreenToClient(_tray, ref topLeft)) return false;
 
@@ -244,9 +311,47 @@ namespace MediaController
             Rectangle bounds;
             if (!TryComputeBounds(width, margin, out bounds)) return false;
 
+            if (RightOfNeighbour) CarryNeighbour(child, bounds.X, margin);
+
             return Native.SetWindowPos(child, Native.HWND_TOP,
                 bounds.X, bounds.Y, bounds.Width, bounds.Height,
                 Native.SWP_NOACTIVATE | Native.SWP_SHOWWINDOW);
+        }
+
+        /// <summary>
+        /// Moves DesktopSwitcher's strip by the same step as the tile, just before the tile moves.
+        ///
+        /// On the right of the strip the tile is the one that moves when a tray icon comes or
+        /// goes, and the strip follows it from another process: a location hook, a message-loop
+        /// turn, then its own SetWindowPos. That is a few milliseconds at best, and a few
+        /// milliseconds is a frame the compositor can present - with the tile moving left, its
+        /// edge showed over the strip's. Following can never close that gap, only shrink it. So
+        /// the leader carries the follower: both move in this one turn, the gap between them
+        /// does not change, and the strip's own follow, arriving later, finds it already there
+        /// and has nothing to do.
+        ///
+        /// Only when the strip is actually the tile's neighbour - to its left, close enough to
+        /// be the one DesktopSwitcher docked against us - and only by the tile's own step, so the
+        /// spacing DesktopSwitcher chose is kept whatever its margin is.
+        /// </summary>
+        void CarryNeighbour(IntPtr tile, int newClientX, int margin)
+        {
+            IntPtr strip = Neighbour();
+            if (strip == IntPtr.Zero || !Native.IsWindowVisible(strip)) return;
+
+            Native.RECT t, n;
+            if (!Native.GetWindowRect(tile, out t) || !Native.GetWindowRect(strip, out n)) return;
+
+            var tp = new Native.POINT(); tp.X = t.Left; tp.Y = t.Top;
+            var np = new Native.POINT(); np.X = n.Left; np.Y = n.Top;
+            if (!Native.ScreenToClient(_tray, ref tp) || !Native.ScreenToClient(_tray, ref np)) return;
+
+            int dx = newClientX - tp.X;
+            int gap = t.Left - n.Right;
+            if (dx == 0 || gap < 0 || gap > margin * 2 + Scale(20)) return;
+
+            Native.SetWindowPos(strip, IntPtr.Zero, np.X + dx, np.Y, 0, 0,
+                Native.SWP_NOSIZE | Native.SWP_NOZORDER | Native.SWP_NOACTIVATE);
         }
 
         /// <summary>

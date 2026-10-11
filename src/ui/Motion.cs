@@ -12,7 +12,13 @@ namespace MediaController
         /// Below this, a 0..1 value can no longer change an 8-bit colour, so the ease
         /// finishes there rather than spending frames converging invisibly.
         /// </summary>
+        /// <summary>Frame interval for a WinForms timer: 15 and not 16, because the system tick is 15.6 ms and a 16 ms request lands on the second tick (see DesktopSwitcher's Motion).</summary>
+        public const int FrameMs = 15;
+
         public const float ToneEpsilon = 1f / 255f;
+
+        /// <summary>Half a pixel cannot be drawn: the ease for a position finishes there.</summary>
+        public const float PixelEpsilon = 0.5f;
 
         /// <summary>
         /// The fraction of the remaining distance to cross in a frame of

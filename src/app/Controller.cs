@@ -83,6 +83,9 @@ namespace MediaController
             _trim.Tick += delegate { _trim.Interval = 300000; GC.Collect(); Native.TrimWorkingSet(); };
             _trim.Start();
 
+            _glide.Interval = Motion.FrameMs;
+            _glide.Tick += delegate { OnGlideFrame(); };
+
             _follow.Interval = 250;
             _follow.Tick += delegate { FollowNeighbour(); };
             _follow.Start();
@@ -166,6 +169,8 @@ namespace MediaController
             if (!_host.Locate() || !_host.HasAnchor) return;   // the tick retries
 
             _host.RightOfNeighbour = _cfg.Side == TileSide.Right;
+            _host.ResetGlide();
+            _glide.Stop();
             int width = _host.Scale(MediaTile.Width);
             int margin = _host.Scale(_cfg.Margin);
 
@@ -228,7 +233,7 @@ namespace MediaController
             {
                 // Keeps us above the task buttons in z-order. Following the neighbour as it
                 // grows is FollowNeighbour's job, which runs much more often.
-                _host.Reassert(_tile.Handle, _host.Scale(MediaTile.Width), _host.Scale(_cfg.Margin));
+                PlaceTile();
                 _lastAnchor = _host.AnchorX();
             }
 
@@ -248,8 +253,50 @@ namespace MediaController
         int _lastAnchor;
         LocationWatcher _neighbourWatch;
 
+        // On the right of the strip the tile sits against the notification area, and a tray icon
+        // coming or going moves that. The 250 ms poll above left the tile a quarter of a second
+        // behind, which with DesktopSwitcher's strip following the tile read as the tile jumping
+        // onto the strip and the strip then shifting. Explorer owns the notification area, so a
+        // location hook on Explorer says when it moves; the callback is one comparison. The tile
+        // then glides rather than jumps, and the strip, which follows the tile, glides with it.
+        LocationWatcher _explorerWatch;
+        readonly Timer _glide = new Timer();
+        int _glideTick;
+
+        void WatchExplorer()
+        {
+            uint pid = _cfg.Side == TileSide.Right ? _host.TaskbarProcessId() : 0;
+            if (_explorerWatch != null && _explorerWatch.ProcessId == pid) return;
+            if (_explorerWatch != null) { _explorerWatch.Dispose(); _explorerWatch = null; }
+            if (pid != 0) _explorerWatch = new LocationWatcher(pid, OnExplorerMoved);
+        }
+
+        void OnExplorerMoved()
+        {
+            if (_tile != null && _host.AnchorMoved()) PlaceTile();
+        }
+
+        /// <summary>Positions the tile, and starts the glide if that found the anchor had moved.</summary>
+        void PlaceTile()
+        {
+            _host.Reassert(_tile.Handle, _host.Scale(MediaTile.Width), _host.Scale(_cfg.Margin));
+            if (_host.Gliding && !_glide.Enabled) { _glideTick = Environment.TickCount; _glide.Start(); }
+        }
+
+        void OnGlideFrame()
+        {
+            int now = Environment.TickCount;
+            int elapsed = now - _glideTick;
+            _glideTick = now;
+            if (_tile == null) { _glide.Stop(); return; }
+            _host.StepGlide(elapsed);
+            _host.Reassert(_tile.Handle, _host.Scale(MediaTile.Width), _host.Scale(_cfg.Margin));
+            if (!_host.Gliding) _glide.Stop();
+        }
+
         void FollowNeighbour()
         {
+            WatchExplorer();
             uint pid = _host.NeighbourProcessId();
             if (_neighbourWatch == null ? pid != 0 : _neighbourWatch.ProcessId != pid)
             {
@@ -262,10 +309,11 @@ namespace MediaController
         void FollowNeighbour2()
         {
             if (_tile == null) return;
+            if (_cfg.Side == TileSide.Right) { if (_host.AnchorMoved()) PlaceTile(); return; }
             int a = _host.AnchorX();
             if (a == _lastAnchor) return;
             _lastAnchor = a;
-            _host.Reassert(_tile.Handle, _host.Scale(MediaTile.Width), _host.Scale(_cfg.Margin));
+            PlaceTile();
         }
 
         // ---- media ---------------------------------------------------------------------
@@ -559,6 +607,8 @@ namespace MediaController
         {
             _tick.Stop();
             _follow.Stop();
+            _glide.Stop();
+            if (_explorerWatch != null) { _explorerWatch.Dispose(); _explorerWatch = null; }
             if (_neighbourWatch != null) { _neighbourWatch.Dispose(); _neighbourWatch = null; }
             _trim.Stop();
             _coalesce.Stop();
